@@ -13,6 +13,7 @@ from sklearn.model_selection import GridSearchCV, cross_val_score
 from sklearn.linear_model import LinearRegression, Ridge, LogisticRegression
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
+from sklearn.cluster import KMeans  # Added this!
 
 # Internal Imports
 from .config import RANDOM_STATE, CV_FOLDS
@@ -43,6 +44,11 @@ def get_classification_models(num_feat: List[str], cat_feat: List[str]) -> Dict[
         "Gradient Boosting": Pipeline([('pre', pre), ('clf', GradientBoostingClassifier(random_state=RANDOM_STATE))])
     }
 
+# --- CLUSTERING MODELS ---
+def get_kmeans(n_clusters: int = 4) -> KMeans:
+    """Get configured KMeans model."""
+    return KMeans(n_clusters=n_clusters, random_state=RANDOM_STATE, n_init=10)
+
 # --- EVALUATION UTILITY ---
 def run_model_tournament(models: Dict[str, Pipeline], X, y, scoring: str) -> pd.DataFrame:
     """Trains multiple models and compares them."""
@@ -51,3 +57,20 @@ def run_model_tournament(models: Dict[str, Pipeline], X, y, scoring: str) -> pd.
         scores = cross_val_score(model, X, y, cv=CV_FOLDS, scoring=scoring, n_jobs=-1)
         results.append({"Model": name, "Mean Score": scores.mean(), "Std Dev": scores.std()})
     return pd.DataFrame(results).sort_values(by="Mean Score", ascending=False)
+
+# --- DEEP LEARNING BUILDER ---
+def get_deep_learning_model(input_shape: int):
+    """Creates a Neural Network using TensorFlow/Keras."""
+    try:
+        from tensorflow.keras import layers, models
+        model = models.Sequential([
+            layers.Dense(64, activation='relu', input_shape=(input_shape,)),
+            layers.Dropout(0.2),
+            layers.Dense(32, activation='relu'),
+            layers.Dense(1, activation='sigmoid')
+        ])
+        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        return model
+    except ImportError:
+        print("TensorFlow not found. Please install it to use Deep Learning.")
+        return None
