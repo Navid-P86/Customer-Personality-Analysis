@@ -1,94 +1,53 @@
-from sklearn.ensemble import RandomForestRegressor
+import pandas as pd
+import numpy as np
+from typing import Dict, Any, Tuple, List
+import os
+
+# Sklearn Core
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.model_selection import GridSearchCV, cross_val_score
 
-def get_regression_pipeline(numeric_features, categorical_features):
-    """
-    Creates a professional ML pipeline:
-    1. Scales numbers (StandardScaler)
-    2. Encodes text (OneHotEncoder)
-    3. Trains a Random Forest
-    """
-    # Preprocessing for numerical data
-    numeric_transformer = StandardScaler()
+# Algorithms
+from sklearn.linear_model import LinearRegression, Ridge, LogisticRegression
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingClassifier
+from sklearn.svm import SVC
 
-    # Preprocessing for categorical data
-    categorical_transformer = OneHotEncoder(handle_unknown='ignore')
+# Internal Imports
+from .config import RANDOM_STATE, CV_FOLDS
 
-    # Bundle preprocessing for both types of data
-    preprocessor = ColumnTransformer(
+def get_preprocessor(num_features: List[str], cat_features: List[str]) -> ColumnTransformer:
+    """Creates a standardized preprocessor for all ML models."""
+    return ColumnTransformer(
         transformers=[
-            ('num', numeric_transformer, numeric_features),
-            ('cat', categorical_transformer, categorical_features)
+            ('num', StandardScaler(), num_features),
+            ('cat', OneHotEncoder(handle_unknown='ignore'), cat_features)
         ])
 
-    # Create the full pipeline
-    model = Pipeline(steps=[
-        ('preprocessor', preprocessor),
-        ('regressor', RandomForestRegressor(n_estimators=100, random_state=42))
-    ])
-    
-    return model
+# --- REGRESSION TOURNAMENT ---
+def get_regression_models(num_feat: List[str], cat_feat: List[str]) -> Dict[str, Pipeline]:
+    pre = get_preprocessor(num_feat, cat_feat)
+    return {
+        "Linear": Pipeline([('pre', pre), ('reg', LinearRegression())]),
+        "Ridge": Pipeline([('pre', pre), ('reg', Ridge(random_state=RANDOM_STATE))]),
+        "Random Forest": Pipeline([('pre', pre), ('reg', RandomForestRegressor(random_state=RANDOM_STATE))])
+    }
 
-from sklearn.ensemble import RandomForestClassifier
+# --- CLASSIFICATION TOURNAMENT ---
+def get_classification_models(num_feat: List[str], cat_feat: List[str]) -> Dict[str, Pipeline]:
+    pre = get_preprocessor(num_feat, cat_feat)
+    return {
+        "Logistic": Pipeline([('pre', pre), ('clf', LogisticRegression(class_weight='balanced'))]),
+        "Random Forest": Pipeline([('pre', pre), ('clf', RandomForestClassifier(class_weight='balanced', random_state=RANDOM_STATE))]),
+        "Gradient Boosting": Pipeline([('pre', pre), ('clf', GradientBoostingClassifier(random_state=RANDOM_STATE))])
+    }
 
-def get_classification_pipeline(numeric_features, categorical_features):
-    """
-    Creates a classification pipeline:
-    1. Scaling and Encoding
-    2. Random Forest Classifier
-    """
-    from sklearn.compose import ColumnTransformer
-    from sklearn.pipeline import Pipeline
-    from sklearn.preprocessing import StandardScaler, OneHotEncoder
-
-    numeric_transformer = StandardScaler()
-    categorical_transformer = OneHotEncoder(handle_unknown='ignore')
-
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ('num', numeric_transformer, numeric_features),
-            ('cat', categorical_transformer, categorical_features)
-        ])
-
-    model = Pipeline(steps=[
-        ('preprocessor', preprocessor),
-        ('classifier', RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced'))
-    ])
-    
-    return model
-
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
-
-def get_clustering_pipeline(n_clusters=4):
-    """
-    Creates a simple K-Means model. 
-    Note: Clustering usually happens after manual scaling.
-    """
-    return KMeans(n_clusters=n_clusters, init='k-means++', random_state=42, n_init=10)
-
-import tensorflow as tf
-from tensorflow.keras import layers, models
-
-def get_deep_learning_model(input_shape):
-    """
-    Creates a Neural Network using TensorFlow/Keras.
-    """
-    model = models.Sequential([
-        # Layer 1: 64 neurons, learning patterns in the data
-        layers.Dense(64, activation='relu', input_shape=(input_shape,)),
-        layers.Dropout(0.2), # Randomly shuts off neurons to prevent 'memorization' (overfitting)
-        
-        # Layer 2: 32 neurons
-        layers.Dense(32, activation='relu'),
-        
-        # Output Layer: 1 neuron with Sigmoid (converts output to a 0-1 probability)
-        layers.Dense(1, activation='sigmoid')
-    ])
-    
-    model.compile(optimizer='adam',
-                  loss='binary_crossentropy',
-                  metrics=['accuracy'])
-    return model
+# --- EVALUATION UTILITY ---
+def run_model_tournament(models: Dict[str, Pipeline], X, y, scoring: str) -> pd.DataFrame:
+    """Trains multiple models and compares them."""
+    results = []
+    for name, model in models.items():
+        scores = cross_val_score(model, X, y, cv=CV_FOLDS, scoring=scoring, n_jobs=-1)
+        results.append({"Model": name, "Mean Score": scores.mean(), "Std Dev": scores.std()})
+    return pd.DataFrame(results).sort_values(by="Mean Score", ascending=False)
